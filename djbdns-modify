@@ -182,17 +182,34 @@ lookup() {
 	fi
     fi
 }
+format_record() {
+    # Filter to format an arbitrary record.
+    # If the type is recognised, the correct filter is used.
+    # If not the record is output unmodified
+    local record
+    while read record
+    do
+	case "$record" in 
+	    \'*) echo "$record" | format_text ;;
+	    *) echo "$record" ;;
+	esac	
+    done
+}
 lookup_name() {
     local file="$1"
     local name="$2"
-    grep "^.${name}:" "${file}" && return $SUCCESS || return $NOT_FOUND
+    { grep "^.${name}:" "${file}" | format_record ; } && return $SUCCESS || return $NOT_FOUND
+}
+format_text() {
+    # Filter to format djbdns record(s) known to be TEXT
+    awk -F ':' -e '{printf "\"%s\" %s \"%s\"\n", substr($1,2), "TEXT", $2}'
 }
 lookup_text() {
     local file="$1"
     local name="$2"
     local value="$3"
     [[ "$value" == "" ]] && value='[^:]*'
-    grep "^'${name}:${value}:" "${file}" && return $SUCCESS || return $NOT_FOUND
+    { grep "^'${name}:${value}:" "${file}" | format_text ; } && return $SUCCESS || return $NOT_FOUND
 }
 
 
