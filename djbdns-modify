@@ -1,0 +1,181 @@
+#!/bin/bash
+#
+# Make simple modifications to a djbdns/tinydns domain data file.
+#
+# djbdns-modify <file> add <name> <type> <value>...
+#
+#   Add an entry to the domain data file.
+#   The number and meaning of <value>... depend on the <type>.
+#
+# djbdns-modify <file> remove <name> [<type> [<value>...]]
+#
+#   Remove zero or more entries from the domain data file.
+#   All entries which match the name, type and values (if specified) are removed.
+#   If nothing matches, no error is returned but nothing happens.
+#
+# djbdns-modify <file> lookup <name> [<type> [<value>...]]
+#
+#   Display the matching entries, if any. Output format for each entry will be:
+#       <name> <type> <value>...
+#   If nothing is found, no output is produced but the not found status is returned.
+#
+# djbdns-modify --help
+#
+#   List commands, types and values supported.
+#
+# djbdns-modify --supported <type> [<value>...]
+#
+#   Tests if the specified type (and values if specified) is supported by this
+#   version of the script, and returns with the appropriate status code, but
+#   does not output any messages.
+#
+# All commands exit with the following exit status:
+#   0 - Success.
+#   1 - Command parsing or usage error.
+#   90 - <name> [<type> [<value>...]] not found (only in lookup)
+#   91 - <type> not recognized.
+#   92 - <type> recognized but <value>... not understood as a valid value for the type.
+#   93 - <file> not found
+#   Other values are unspecified errors.
+#
+#
+# Note: additional types (and corresponding definitions of values) may be added over time.
+# Callers can use --supported to check the syntax they require is supported by the
+# version of the script they are using.
+#
+
+# Errors
+SUCCESS=0
+ERROR=1
+NOT_FOUND=90
+TYPE_ERROR=91
+VALUE_ERROR=92
+FILE_ERROR=93
+
+TIME=3600
+
+# Display help
+help() {
+    echo "$0 <file> add <name> TEXT \"<string>\""
+    echo
+    echo "$0 <file> lookup <name> TEXT \"<string>\""
+    echo "$0 <file> lookup <name> TEXT"
+    echo "$0 <file> lookup <name>"
+    echo
+    echo "$0 <file> remove <name> TEXT \"<string>\""
+    echo "$0 <file> remove <name> TEXT"
+    echo "$0 <file> remove <name>"
+    echo
+    echo "$0 --supported TEXT \"<string>\""
+    echo "$0 --supported TEXT"
+    echo
+    echo "$0 --help"
+}
+
+# Support check
+supported() {
+    [[ $# -gt 0 ]] || return $ERROR
+
+    if [[ "$1" == "TEXT" ]]
+    then
+	# Any $2 or none is valid
+	[[ $# -le 2 ]] || return $ERROR
+    else
+	return $TYPE_ERROR
+    fi
+
+    return $SUCCESS
+}
+validate_name() {
+    return $SUCCESS
+}
+validate_file() {
+    if [[ ! -e "$1" ]]
+    then
+	echo "$0: File $1 not found"
+	return $FILE_ERROR
+    fi
+    return $SUCCESS
+}
+
+# Add a record
+add() {
+    if [[ $# -lt 4 ]]
+    then
+	echo "$0: add command must include at least 4 arguments: <file> add <name> <type>"
+	return $ERROR
+    fi
+    file="$1"
+    name="$3"
+    type="$4"
+    shift 4
+
+    validate_file "$file" || return $?
+    validate_name "$name" || return $?
+    
+    if [[ "$type" == "TEXT" ]]
+    then
+	# TEXT must have exactly one value
+	if [[ $# != 1 ]]
+	then
+	    echo "$0: TEXT must have exactly one value ($@)"
+	    return $VALUE_ERROR
+	fi
+	add_text "$file" "$name" "$@"
+	return $?
+    else
+	echo "$0: Invalid record type $type"
+	echo "Use '$0 --help' for more information"
+	return $TYPE_ERROR
+    fi
+}
+add_record() {
+    echo "$2" >>"$1"
+}
+add_text() {
+    file="$1"
+    name="$2"
+    value="$3"
+
+    if [[ "$value" == "" ]]
+    then
+	echo "$0: TEXT value must be non-zero length"
+	return $VALUE_ERROR
+    fi
+    
+    add_record "$file" "'${name}:${value}:${TIME}"
+}
+
+#
+# Command parser
+#
+if [[ "$1" == "--help" ]]
+then
+    help
+    exit $SUCCESS
+    
+elif [[ "$1" == "--supported" ]]
+then
+    shift
+    supported "$@"
+    exit $?
+
+elif [[ "$2" == "add" ]]
+then
+    add "$@"
+    exit $?
+
+elif [[ "$2" == "remove" ]]
+then
+    remove "$@"
+    exit $?
+
+elif [[ "$2" == "lookup" ]]
+then
+    lookup "$@"
+    exit $?
+    
+else
+    help
+    exit $ERROR
+fi
