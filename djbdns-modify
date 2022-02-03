@@ -79,7 +79,7 @@ supported() {
     if [[ "$1" == "TEXT" ]]
     then
 	# Any $2 or none is valid
-	[[ $# -le 2 ]] || return $ERROR
+	[[ $# -gt 2 ]] && return $VALUE_ERROR
     else
 	return $TYPE_ERROR
     fi
@@ -105,9 +105,9 @@ add() {
 	echo "$0: add command must include at least 4 arguments: <file> add <name> <type>"
 	return $ERROR
     fi
-    file="$1"
-    name="$3"
-    type="$4"
+    local file="$1"
+    local name="$3"
+    local type="$4"
     shift 4
 
     validate_file "$file" || return $?
@@ -133,9 +133,9 @@ add_record() {
     echo "$2" >>"$1"
 }
 add_text() {
-    file="$1"
-    name="$2"
-    value="$3"
+    local file="$1"
+    local name="$2"
+    local value="$3"
 
     if [[ "$value" == "" ]]
     then
@@ -145,6 +145,57 @@ add_text() {
     
     add_record "$file" "'${name}:${value}:${TIME}"
 }
+
+# Lookup records
+lookup() {
+    if [[ $# -lt 3 ]]
+    then
+	echo "$0: lookup command must include at least 3 arguments: <file> lookup <name> [<type> [<value>...]]"
+	return $ERROR
+    fi
+    local file="$1"
+    local name="$3"
+    shift 3
+
+    if [[ $# -eq 0 ]]
+    then
+	# <file> lookup <name>
+	lookup_name "$file" "$name"
+	return $?
+    else
+	local type="$1" ; shift
+	
+	if [[ "$type" == "TEXT" ]]
+	then
+	    # TEXT must have up to one value
+	    if [[ $# -gt 1 ]]
+	    then
+		echo "$0: TEXT must have no more than one value ($@)"
+		return $VALUE_ERROR
+	    fi
+	    lookup_text "$file" "$name" "$@"
+	    return $?
+	else
+	    echo "$0: Invalid record type $type"
+	    echo "Use '$0 --help' for more information"
+	    return $TYPE_ERROR
+	fi
+    fi
+}
+lookup_name() {
+    local file="$1"
+    local name="$2"
+    grep "^.${name}:" "${file}" && return $SUCCESS || return $NOT_FOUND
+}
+lookup_text() {
+    local file="$1"
+    local name="$2"
+    local value="$3"
+    [[ "$value" == "" ]] && value='[^:]*'
+    grep "^'${name}:${value}:" "${file}" && return $SUCCESS || return $NOT_FOUND
+}
+
+
 
 #
 # Command parser
