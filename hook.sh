@@ -7,28 +7,44 @@
 # which is from https://github.com/lukas2511/dehydrated/blob/master/docs/examples/hook.sh
 #
 
+DOMAIN_DATA_DIR=/home/cobb/BytemarkDNS/data
+DOMAIN_RELOAD=/home/cobb/BytemarkDNS/upload
+
+find_file_for_domain() {
+	local domain="$1"
+	local f fname
+	
+	for f in $DOMAIN_DATA_DIR/*
+	do
+		# See if the file name matches the right hand end of the domain name
+		fname=$(basename "$f")
+		if [ "${fname%%$domain}" != "$fname" ]
+		then
+			# $domain matches the end of the filename
+			# so we have found the right file
+			echo "$f"
+			return 0
+		fi
+	done
+	# Not found
+	return 1
+}
+
 set -eu -o pipefail
 
 deploy_challenge() {
-		local DOMAIN="${1}" TOKEN_FILENAME="${2}" TOKEN_VALUE="${3}"
-		echo ""
-		echo "Add the following to the zone definition of ${1}:"
-		echo "_acme-challenge.${1}. IN TXT \"${3}\""
-		echo ""
-		echo -n "Press enter to continue..."
-		read tmp
-		echo ""
+	local DOMAIN="${1}" TOKEN_FILENAME="${2}" TOKEN_VALUE="${3}"
+	local domain_file=$(find_file_for_domain "$DOMAIN")
+	djbdns-modify "$domain_file" remove "_acme-challenge.${DOMAIN}" TEXT
+	djbdns-modify "$domain_file" add "_acme-challenge.$DOMAIN" TEXT "$TOKEN_VALUE"
+	$DOMAIN_RELOAD "$domain_file"
 }
 
 clean_challenge() {
-		local DOMAIN="${1}" TOKEN_FILENAME="${2}" TOKEN_VALUE="${3}"
-		echo ""
-		echo "Now you can remove the following from the zone definition of ${1}:"
-		echo "_acme-challenge.${1}. IN TXT \"${3}\""
-		echo ""
-		echo -n "Press enter to continue..."
-		read tmp
-		echo ""
+	local DOMAIN="${1}" TOKEN_FILENAME="${2}" TOKEN_VALUE="${3}"
+	local domain_file=$(find_file_for_domain "$DOMAIN")
+	djbdns-modify "$domain_file" remove "_acme-challenge.${DOMAIN}" TEXT "$TOKEN_VALUE"
+	$DOMAIN_RELOAD "$domain_file"
 }
 
 deploy_cert() {
