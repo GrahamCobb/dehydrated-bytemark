@@ -11,7 +11,7 @@
 #
 #   Remove zero or more entries from the domain data file.
 #   All entries which match the name, type and values (if specified) are removed.
-#   If nothing matches, no error is returned but nothing happens.
+#   If nothing matches, success is returned but nothing happens.
 #
 # djbdns-modify <file> lookup <name> [<type> [<value>...]]
 #
@@ -210,6 +210,56 @@ lookup_text() {
     local value="$3"
     [[ "$value" == "" ]] && value='[^:]*'
     { grep "^'${name}:${value}:" "${file}" | format_text ; } && return $SUCCESS || return $NOT_FOUND
+}
+
+remove() {
+    if [[ $# -lt 3 ]]
+    then
+	echo "$0: remove command must include at least 3 arguments: <file> remove <name> [<type> [<value>...]]"
+	return $ERROR
+    fi
+    local file="$1"
+    local name="$3"
+    shift 3
+
+    if [[ $# -eq 0 ]]
+    then
+	# <file> remove <name>
+	remove_name "$file" "$name"
+	return $?
+    else
+	local type="$1" ; shift
+	
+	if [[ "$type" == "TEXT" ]]
+	then
+	    # TEXT must have up to one value
+	    if [[ $# -gt 1 ]]
+	    then
+		echo "$0: TEXT must have no more than one value ($@)"
+		return $VALUE_ERROR
+	    fi
+	    remove_text "$file" "$name" "$@"
+	    return $?
+	else
+	    echo "$0: Invalid record type $type"
+	    echo "Use '$0 --help' for more information"
+	    return $TYPE_ERROR
+	fi
+    fi
+}
+remove_name() {
+    local file="$1"
+    local name="$2"
+    sed -i -e "/^.${name}:/d" "${file}"
+    return $SUCCESS
+}
+remove_text() {
+    local file="$1"
+    local name="$2"
+    local value="$3"
+    [[ "$value" == "" ]] && value='[^:]*'
+    sed -i -e "/^'${name}:${value}:/d" "${file}"
+    return $SUCCESS
 }
 
 
