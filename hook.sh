@@ -97,6 +97,7 @@ find_file_for_domain() {
 		fi
 	done
 	# Not found
+	echo "No djbdns file found for domain $domain"
 	return 1
 }
 
