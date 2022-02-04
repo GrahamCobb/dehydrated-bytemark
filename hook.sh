@@ -103,7 +103,6 @@ find_file_for_domain() {
 set -eu -o pipefail
 
 deploy_challenge() {
-	# Bytemark DNS normally takes about 5 minutes to propagate 
 	local RECORDS=() wait_time=60 max_waits=10 wait_count=0
 	while [[ $# -gt 0 ]]
 	do
@@ -111,10 +110,11 @@ deploy_challenge() {
 		local domain_file=$(find_file_for_domain "$DOMAIN")
 		djbdns-modify "$domain_file" remove "_acme-challenge.${DOMAIN}" TEXT
 		djbdns-modify "$domain_file" add "_acme-challenge.$DOMAIN" TEXT "$TOKEN_VALUE"
+		echo "Added _acme-challenge.$DOMAIN: $TOKEN_VALUE"
+		$DOMAIN_RELOAD "$domain_file"
 		RECORDS+=( "_acme-challenge.$DOMAIN" )
 		RECORDS+=( ${TOKEN_VALUE} )
 	done
-	$DOMAIN_RELOAD "$domain_file"
 
 	# Bytemark DNS normally takes about 5 mins to propagate.
 	sleep $wait_time
@@ -128,10 +128,14 @@ deploy_challenge() {
 }
 
 clean_challenge() {
-	local DOMAIN="${1}" TOKEN_FILENAME="${2}" TOKEN_VALUE="${3}"
-	local domain_file=$(find_file_for_domain "$DOMAIN")
-	djbdns-modify "$domain_file" remove "_acme-challenge.${DOMAIN}" TEXT "$TOKEN_VALUE"
-	$DOMAIN_RELOAD "$domain_file"
+	while [[ $# -gt 0 ]]
+	do
+		local DOMAIN="${1}" TOKEN_FILENAME="${2}" TOKEN_VALUE="${3}" ; shift 3
+		local domain_file=$(find_file_for_domain "$DOMAIN")
+		djbdns-modify "$domain_file" remove "_acme-challenge.$DOMAIN" TEXT "$TOKEN_VALUE"
+		echo "Removed _acme-challenge.$DOMAIN: $TOKEN_VALUE"
+		$DOMAIN_RELOAD "$domain_file"
+	done
 }
 
 deploy_cert() {
