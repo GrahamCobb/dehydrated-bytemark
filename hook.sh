@@ -84,7 +84,6 @@ deploy_challenge() {
 		djbdns-modify "$domain_file" add "_acme-challenge.$DOMAIN" TEXT "$TOKEN_VALUE"
 		RECORDS+=( "_acme-challenge.$DOMAIN" )
 		RECORDS+=( ${TOKEN_VALUE} )
-		challenge_list = "$challenge_list _acme-challenge.$DOMAIN $TOKEN_VALUE"
 	done
 	$DOMAIN_RELOAD "$domain_file"
 
