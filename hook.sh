@@ -5,7 +5,7 @@
 #
 # Adapted from https://github.com/sebastiansterk/dns-01-manual/blob/master/hook.sh
 # which is from https://github.com/lukas2511/dehydrated/blob/master/docs/examples/hook.sh
-# And from https://github.com/bennettp123/dehydrated-email-notify-hook/blob/master/hook.sh
+# And inspired by https://github.com/bennettp123/dehydrated-email-notify-hook/blob/master/hook.sh
 #
 
 # Accessing the user's DNS account requires the following environment variables to be set.
@@ -24,33 +24,61 @@ upload_dns_files() {
 	rsync $DOMAIN_FILE dns@upload.ns.bytemark.co.uk::${RSYNC_USERNAME}/
 }
 DOMAIN_RELOAD="upload_dns_files"
-function has_propagated {
-    while [ "$#" -ge 2 ]; do
-        local RECORD_NAME="${1}"; shift
-        local TOKEN_VALUE="${1}"; shift
-        if [ ${#AUTH_NS[@]} -eq 0 ]; then
-            local RECORD_DOMAIN=$RECORD_NAME
-            declare -a iAUTH_NS
-            while [ -z "$iAUTH_NS" ]; do
-                RECORD_DOMAIN=$(echo "${RECORD_DOMAIN}" | cut -d'.' -f 2-)
-                iAUTH_NS=($(dig +short "${RECORD_DOMAIN}" IN CNAME))
-                if [ -n "$iAUTH_NS" ]; then
-                    unset iAUTH_NS && declare -a iAUTH_NS
-                    continue
-                fi
-                iAUTH_NS=($(dig +short "${RECORD_DOMAIN}" IN NS))
-            done
-        else
-           local iAUTH_NS=("${AUTH_NS[@]}")
-        fi
-        for NS in "${iAUTH_NS[@]}"; do
-            dig +short @"${NS}" "${RECORD_NAME}" IN TXT | grep -q "\"${TOKEN_VALUE}\"" || return 1
-        done
-        unset iAUTH_NS
-    done
-    return 0
-}
+#
+# has_propagated takes a list of DNS names and corresponding TEXT values:
+#  <name> <text> [<name> <text>]...
+# It checks that all the names are defined, on all the authoritative servers, with the specified TEXT.
+# If any of the values are wrong, or the name is not defined, on any server then it returns false.
+#
+# Note: retrying and waiting are the responsibility of the caller.
+#
+# A future optimisation might retain the list of authorative servers to save some lookups.
+#
+has_propagated() {
+	while [[ $# -gt 0 ]]
+	do
+		unset AUTH_NS || true # Ignore error in set -e environment
+		local name="$1" value="$2" ; shift 2
+		local AUTH_NS=$(get_authoritative_ns $name) || { echo "Cannot determine authoritative nameservers for $name" ; return 2 ; }
+		for NS in $AUTH_NS
+		do
+			dig +short @"$NS" "$name" IN TXT | fgrep -q "$value" || return 1	
+		done
+	done
 
+	# All OK
+	return 0
+}
+#
+# In general, there is no way to work out the "domain" part of an arbitrary DNS name.
+# So, get_authoritative_ns starts with the full DNS name and strips leading components
+# off until it gets the nameserver(s)
+get_authoritative_ns() {
+	local name="$1"
+	local nslist
+
+	# Add trailing dot if omitted
+	[[ "${name%.}" == "$name" ]] && name="${name}."
+
+	while [[ "$name" != "" ]]
+	do
+		# Need to first follow any CNAME
+		cname="$(dig +short "$name" IN CNAME)"
+		if [[ "${#cname}" -gt 0 ]]
+		then
+			name="$cname"
+			[[ "${name%.}" == "$name" ]] && name="${name}."
+			continue
+		fi
+				
+		nslist="$(dig +short "$name" IN NS)"
+		[[ "${#nslist}" -gt 0 ]] && echo "$nslist" && return 0
+		name="${name#*.}"
+	done
+
+	# No nameservers found!
+	return 2
+}
 
 find_file_for_domain() {
 	local domain="$1"
@@ -75,7 +103,8 @@ find_file_for_domain() {
 set -eu -o pipefail
 
 deploy_challenge() {
-	local RECORDS=() wait_time=30 max_waits=10 wait_count=0
+	# Bytemark DNS normally takes about 5 minutes to propagate 
+	local RECORDS=() wait_time=60 max_waits=10 wait_count=0
 	while [[ $# -gt 0 ]]
 	do
 		local DOMAIN="${1}" TOKEN_FILENAME="${2}" TOKEN_VALUE="${3}" ; shift 3
@@ -87,10 +116,11 @@ deploy_challenge() {
 	done
 	$DOMAIN_RELOAD "$domain_file"
 
-	sleep 10
+	# Bytemark DNS normally takes about 5 mins to propagate.
+	sleep $wait_time
 	while ! has_propagated "${RECORDS[@]}"
 	do
-		( wait_count++ ) || true # Note: we have set -e
+		(( wait_count++ )) || true # Note: we have set -e
 		[[ $wait_count -gt $max_waits ]] && return 1
 		echo " + DNS not propagated. Waiting ${wait_time}s for record creation and replication..."
 		sleep $wait_time
