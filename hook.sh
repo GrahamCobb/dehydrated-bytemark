@@ -5,6 +5,7 @@
 #
 # Adapted from https://github.com/sebastiansterk/dns-01-manual/blob/master/hook.sh
 # which is from https://github.com/lukas2511/dehydrated/blob/master/docs/examples/hook.sh
+# And from https://github.com/bennettp123/dehydrated-email-notify-hook/blob/master/hook.sh
 #
 
 # Accessing the user's DNS account requires the following environment variables to be set.
@@ -23,6 +24,33 @@ upload_dns_files() {
 	rsync $DOMAIN_FILE dns@upload.ns.bytemark.co.uk::${RSYNC_USERNAME}/
 }
 DOMAIN_RELOAD="upload_dns_files"
+function has_propagated {
+    while [ "$#" -ge 2 ]; do
+        local RECORD_NAME="${1}"; shift
+        local TOKEN_VALUE="${1}"; shift
+        if [ ${#AUTH_NS[@]} -eq 0 ]; then
+            local RECORD_DOMAIN=$RECORD_NAME
+            declare -a iAUTH_NS
+            while [ -z "$iAUTH_NS" ]; do
+                RECORD_DOMAIN=$(echo "${RECORD_DOMAIN}" | cut -d'.' -f 2-)
+                iAUTH_NS=($(dig +short "${RECORD_DOMAIN}" IN CNAME))
+                if [ -n "$iAUTH_NS" ]; then
+                    unset iAUTH_NS && declare -a iAUTH_NS
+                    continue
+                fi
+                iAUTH_NS=($(dig +short "${RECORD_DOMAIN}" IN NS))
+            done
+        else
+           local iAUTH_NS=("${AUTH_NS[@]}")
+        fi
+        for NS in "${iAUTH_NS[@]}"; do
+            dig +short @"${NS}" "${RECORD_NAME}" IN TXT | grep -q "\"${TOKEN_VALUE}\"" || return 1
+        done
+        unset iAUTH_NS
+    done
+    return 0
+}
+
 
 find_file_for_domain() {
 	local domain="$1"
@@ -47,11 +75,27 @@ find_file_for_domain() {
 set -eu -o pipefail
 
 deploy_challenge() {
-	local DOMAIN="${1}" TOKEN_FILENAME="${2}" TOKEN_VALUE="${3}"
-	local domain_file=$(find_file_for_domain "$DOMAIN")
-	djbdns-modify "$domain_file" remove "_acme-challenge.${DOMAIN}" TEXT
-	djbdns-modify "$domain_file" add "_acme-challenge.$DOMAIN" TEXT "$TOKEN_VALUE"
+	local RECORDS=() wait_time=30 max_waits=10 wait_count=0
+	while [[ $# -gt 0 ]]
+	do
+		local DOMAIN="${1}" TOKEN_FILENAME="${2}" TOKEN_VALUE="${3}" ; shift 3
+		local domain_file=$(find_file_for_domain "$DOMAIN")
+		djbdns-modify "$domain_file" remove "_acme-challenge.${DOMAIN}" TEXT
+		djbdns-modify "$domain_file" add "_acme-challenge.$DOMAIN" TEXT "$TOKEN_VALUE"
+		RECORDS+=( "_acme-challenge.$DOMAIN" )
+		RECORDS+=( ${TOKEN_VALUE} )
+		challenge_list = "$challenge_list _acme-challenge.$DOMAIN $TOKEN_VALUE"
+	done
 	$DOMAIN_RELOAD "$domain_file"
+
+	sleep 10
+	while ! has_propagated "${RECORDS[@]}"
+	do
+		( wait_count++ ) || true # Note: we have set -e
+		[[ $wait_count -gt $max_waits ]] && return 1
+		echo " + DNS not propagated. Waiting ${wait_time}s for record creation and replication..."
+		sleep $wait_time
+	done
 }
 
 clean_challenge() {
