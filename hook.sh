@@ -7,8 +7,22 @@
 # which is from https://github.com/lukas2511/dehydrated/blob/master/docs/examples/hook.sh
 #
 
-DOMAIN_DATA_DIR=/home/cobb/BytemarkDNS/data
-DOMAIN_RELOAD=/home/cobb/BytemarkDNS/upload
+# Accessing the user's DNS account requires the following environment variables to be set.
+#    RSYNC_USERNAME=someuser@some.email.domain
+#    RSYNC_PASSWORD=super-secret-random-password
+# They are provided by Bytemark (for example in the 'upload' script)
+# These should be specified in an /etc/dehydrated/conf.d script
+
+download_dns_files() {
+	export RSYNC_PASSWORD
+	rsync -r dns@upload.ns.bytemark.co.uk::${RSYNC_USERNAME}/ $DOMAIN_DATA_DIR/
+}
+upload_dns_files() {
+	local DOMAIN_FILE="$1"
+	export RSYNC_PASSWORD
+	rsync $DOMAIN_FILE dns@upload.ns.bytemark.co.uk::${RSYNC_USERNAME}/
+}
+DOMAIN_RELOAD="upload_dns_files"
 
 find_file_for_domain() {
 	local domain="$1"
@@ -86,7 +100,15 @@ exit_hook() {
 		echo ""
 }
 
+# We need a temporary directory to download the user's Bytemark DNS files
+DOMAIN_DATA_DIR=$(mktemp -d)
+download_dns_files
+
 HANDLER="$1"; shift
 if [[ "${HANDLER}" =~ ^(deploy_challenge|clean_challenge|deploy_cert|unchanged_cert|invalid_challenge|request_failure|exit_hook)$ ]]; then
   "$HANDLER" "$@"
 fi
+
+# Get rid of DNS files
+rm -rf $DOMAIN_DATA_DIR
+
