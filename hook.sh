@@ -97,7 +97,6 @@ find_file_for_domain() {
 		fi
 	done
 	# Not found
-	echo "No djbdns file found for domain $domain"
 	return 1
 }
 
@@ -109,6 +108,7 @@ deploy_challenge() {
 	do
 		local DOMAIN="${1}" TOKEN_FILENAME="${2}" TOKEN_VALUE="${3}" ; shift 3
 		local domain_file=$(find_file_for_domain "$DOMAIN")
+		[[ "$#domain_file" -eq 0 ]] && echo "No djbdns file found for domain $domain" && exit 1
 		djbdns-modify "$domain_file" remove "_acme-challenge.${DOMAIN}" TEXT
 		djbdns-modify "$domain_file" add "_acme-challenge.$DOMAIN" TEXT "$TOKEN_VALUE"
 		echo "Added _acme-challenge.$DOMAIN: $TOKEN_VALUE"
