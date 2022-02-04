@@ -32,9 +32,9 @@ find_file_for_domain() {
 	do
 		# See if the file name matches the right hand end of the domain name
 		fname=$(basename "$f")
-		if [ "${fname%%$domain}" != "$fname" ]
+		if [ "${domain%%$fname}" != "$domain" ]
 		then
-			# $domain matches the end of the filename
+			# filename matches the end of the domain
 			# so we have found the right file
 			echo "$f"
 			return 0
