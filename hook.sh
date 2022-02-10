@@ -126,7 +126,7 @@ deploy_challenge() {
                   echo ""
                   echo -n "Have you added _acme-challenge.$DOMAIN: $TOKEN_VALUE ? ([Y]/N) "
                   read DONE
-                  [[ "$DONE" == "N" || "$DONE" == "n" ]] && return 1
+                  [[ "$DONE" == N* || "$DONE" == n* ]] && return 1
                 else
                   # Note: this previously removed all existing _acme-challenge. TEXT records
                   # but that is incorrect as the same challenge may require multiple token for the same domain
@@ -168,7 +168,7 @@ clean_challenge() {
                   echo ""
                   echo -n "Have you removed _acme-challenge.$DOMAIN: $TOKEN_VALUE ? ([Y]/N) "
                   read DONE
-                  [[ "$DONE" == "N" || "$DONE" == "n" ]] && return 1
+                  [[ "$DONE" == N* || "$DONE" == n* ]] && return 1
                 else
                   djbdns-modify "$domain_file" remove "_acme-challenge.$DOMAIN" TEXT "$TOKEN_VALUE"
 		  echo "Removed _acme-challenge.$DOMAIN: $TOKEN_VALUE"
