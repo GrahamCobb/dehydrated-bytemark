@@ -3,6 +3,10 @@
 # Dehydrated hook script to handle DNS-01 challenge using Bytemark DNS servers.
 # This might also be usable with other tinydns/djbdns servers.
 #
+# NOTE: this script assumes that if no dns data file can be found for the domain,
+# the user should be prompted to deploy the challenge manually (for example,
+# using a registrar's web interface).
+#
 # Adapted from https://github.com/sebastiansterk/dns-01-manual/blob/master/hook.sh
 # which is from https://github.com/lukas2511/dehydrated/blob/master/docs/examples/hook.sh
 # And inspired by https://github.com/bennettp123/dehydrated-email-notify-hook/blob/master/hook.sh
@@ -108,11 +112,28 @@ deploy_challenge() {
 	do
 		local DOMAIN="${1}" TOKEN_FILENAME="${2}" TOKEN_VALUE="${3}" ; shift 3
 		local domain_file=$(find_file_for_domain "$DOMAIN")
-		[[ "${#domain_file}" -eq 0 ]] && echo "No djbdns file found for domain $DOMAIN" && exit 1
-		djbdns-modify "$domain_file" remove "_acme-challenge.${DOMAIN}" TEXT
-		djbdns-modify "$domain_file" add "_acme-challenge.$DOMAIN" TEXT "$TOKEN_VALUE"
-		echo "Added _acme-challenge.$DOMAIN: $TOKEN_VALUE"
-		$DOMAIN_RELOAD "$domain_file"
+		if [[ "${#domain_file}" -eq 0 ]]
+                then
+                  echo "No djbdns file found for domain $DOMAIN"
+                  echo ""
+                  echo "To deploy the challenge manually:"
+                  echo "Create or modify the DNS name _acme-challenge.${DOMAIN} to have"
+                  echo "the TXT value $TOKEN_VALUE"
+                  echo ""
+                  echo "Then press RETURN below."
+                  echo ""
+                  echo "If this cannot be done, enter N and press return - this will abort the challenge"
+                  echo ""
+                  echo -n "Have you added _acme-challenge.$DOMAIN: $TOKEN_VALUE ? ([Y]/N) "
+                  read DONE
+                  [[ "$DONE" == "N" || "$DONE" == "n" ]] && return 1
+                else
+                  djbdns-modify "$domain_file" remove "_acme-challenge.${DOMAIN}" TEXT
+		  djbdns-modify "$domain_file" add "_acme-challenge.$DOMAIN" TEXT "$TOKEN_VALUE"
+		  echo "Added _acme-challenge.$DOMAIN: $TOKEN_VALUE"
+		  $DOMAIN_RELOAD "$domain_file"
+                fi
+
 		RECORDS+=( "_acme-challenge.$DOMAIN" )
 		RECORDS+=( ${TOKEN_VALUE} )
 	done
@@ -126,6 +147,7 @@ deploy_challenge() {
 		echo " + DNS not propagated. Waiting ${wait_time}s for record creation and replication..."
 		sleep $wait_time
 	done
+        return 0
 }
 
 clean_challenge() {
@@ -133,10 +155,26 @@ clean_challenge() {
 	do
 		local DOMAIN="${1}" TOKEN_FILENAME="${2}" TOKEN_VALUE="${3}" ; shift 3
 		local domain_file=$(find_file_for_domain "$DOMAIN")
-		djbdns-modify "$domain_file" remove "_acme-challenge.$DOMAIN" TEXT "$TOKEN_VALUE"
-		echo "Removed _acme-challenge.$DOMAIN: $TOKEN_VALUE"
-		$DOMAIN_RELOAD "$domain_file"
+		if [[ "${#domain_file}" -eq 0 ]]
+                then
+                  echo "No djbdns file found for domain $DOMAIN"
+                  echo ""
+                  echo "To clean up the challenge manually:"
+                  echo "Remove the DNS name _acme-challenge.${DOMAIN}"
+                  echo "Then press RETURN below."
+                  echo ""
+                  echo "If this cannot be done, enter N and press return - this will abort the challenge"
+                  echo ""
+                  echo -n "Have you removed _acme-challenge.$DOMAIN: $TOKEN_VALUE ? ([Y]/N) "
+                  read DONE
+                  [[ "$DONE" == "N" || "$DONE" == "n" ]] && return 1
+                else
+                  djbdns-modify "$domain_file" remove "_acme-challenge.$DOMAIN" TEXT "$TOKEN_VALUE"
+		  echo "Removed _acme-challenge.$DOMAIN: $TOKEN_VALUE"
+		  $DOMAIN_RELOAD "$domain_file"
+                fi
 	done
+        return 0
 }
 
 deploy_cert() {
