@@ -128,7 +128,8 @@ deploy_challenge() {
                   read DONE
                   [[ "$DONE" == "N" || "$DONE" == "n" ]] && return 1
                 else
-                  djbdns-modify "$domain_file" remove "_acme-challenge.${DOMAIN}" TEXT
+                  # Note: this previously removed all existing _acme-challenge. TEXT records
+                  # but that is incorrect as the same challenge may require multiple token for the same domain
 		  djbdns-modify "$domain_file" add "_acme-challenge.$DOMAIN" TEXT "$TOKEN_VALUE"
 		  echo "Added _acme-challenge.$DOMAIN: $TOKEN_VALUE"
 		  $DOMAIN_RELOAD "$domain_file"
